@@ -1,0 +1,51 @@
+services:
+  checkout:
+    build:
+      context: .
+      dockerfile: shopsim/checkout/Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      INVENTORY_URL: http://inventory:8080
+      PAYMENT_URL: http://payment:8080
+    depends_on:
+      inventory:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+      start_period: 5s
+  inventory:
+    build:
+      context: .
+      dockerfile: shopsim/inventory/Dockerfile
+    ports:
+      - "127.0.0.1:8082:8080"
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+      start_period: 5s
+  payment:
+    build:
+      context: .
+      dockerfile: shopsim/payment/Dockerfile
+    ports:
+      - "127.0.0.1:8081:8080"
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+      start_period: 5s
