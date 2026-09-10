@@ -23,6 +23,8 @@ func TestCheckout(t *testing.T) {
 		{name: "success", want: 200, wantPayment: true},
 		{name: "inventory failure", inventoryStatus: 503, want: 502},
 		{name: "payment failure", paymentStatus: 500, want: 502, wantPayment: true},
+		{name: "inventory conflict", inventoryStatus: 409, want: 409},
+		{name: "payment conflict", paymentStatus: 409, want: 409, wantPayment: true},
 		{name: "inventory malformed", inventoryBody: "{", want: 502},
 		{name: "inventory empty", inventoryBody: "{}", want: 502},
 		{name: "payment malformed", paymentBody: "{", want: 502, wantPayment: true},
