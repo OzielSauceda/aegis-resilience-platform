@@ -38,6 +38,10 @@ type checkout struct {
 	paymentURL   string
 }
 
+type downstreamStatus int
+
+func (s downstreamStatus) Error() string { return fmt.Sprintf("downstream HTTP status %d", s) }
+
 func (c checkout) call(ctx context.Context, endpoint string, payload any) (result, error) {
 	var output result
 	body, err := json.Marshal(payload)
@@ -55,7 +59,7 @@ func (c checkout) call(ctx context.Context, endpoint string, payload any) (resul
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return output, fmt.Errorf("downstream HTTP status %d", response.StatusCode)
+		return output, downstreamStatus(response.StatusCode)
 	}
 	body, err = io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
 	if err != nil {
@@ -68,9 +72,13 @@ func (c checkout) call(ctx context.Context, endpoint string, payload any) (resul
 	return output, err
 }
 
-func downstreamError(w http.ResponseWriter, service string, err error) {
-	slog.Error("downstream request failed", "service", service, "error", err)
+func downstreamError(w http.ResponseWriter, service, orderID string, err error) {
+	slog.Error("downstream request failed", "service", service, "order_id", orderID, "error", err)
 	status := http.StatusBadGateway
+	var downstream downstreamStatus
+	if errors.As(err, &downstream) && downstream == http.StatusConflict {
+		status = http.StatusConflict
+	}
 	var timeout net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
 		status = http.StatusGatewayTimeout
@@ -94,7 +102,7 @@ func (c checkout) handler() http.Handler {
 			err = errors.New("invalid reservation response")
 		}
 		if err != nil {
-			downstreamError(w, "inventory", err)
+			downstreamError(w, "inventory", request.OrderID, err)
 			return
 		}
 		payment, err := c.call(r.Context(), c.paymentURL+"/charge", map[string]any{"order_id": request.OrderID, "amount_cents": request.AmountCents})
@@ -102,7 +110,8 @@ func (c checkout) handler() http.Handler {
 			err = errors.New("invalid payment response")
 		}
 		if err != nil {
-			downstreamError(w, "payment", err)
+			slog.Warn("partial checkout failure: reservation remains", "order_id", request.OrderID, "reservation_id", reservation.ReservationID)
+			downstreamError(w, "payment", request.OrderID, err)
 			return
 		}
 		slog.Info("checkout succeeded", "order_id", request.OrderID)

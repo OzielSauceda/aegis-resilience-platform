@@ -2,6 +2,7 @@
 package httpio
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -48,10 +49,11 @@ func Health(w http.ResponseWriter, r *http.Request) {
 }
 
 // Route keeps method and unknown-path errors consistent with the JSON API.
-func Route(path, method string, handler http.HandlerFunc) http.Handler {
+func Route(path, method string, handler http.HandlerFunc, readiness ...func(context.Context) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wanted := method
-		if r.URL.Path == "/healthz" {
+		isReady := r.URL.Path == "/readyz" && len(readiness) != 0
+		if r.URL.Path == "/healthz" || isReady {
 			wanted = http.MethodGet
 		} else if r.URL.Path != path {
 			Error(w, http.StatusNotFound, "not found")
@@ -60,6 +62,17 @@ func Route(path, method string, handler http.HandlerFunc) http.Handler {
 		if r.Method != wanted {
 			w.Header().Set("Allow", wanted)
 			Error(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if isReady {
+			ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+			defer cancel()
+			if err := readiness[0](ctx); err != nil {
+				slog.Warn("readiness failed", "error", err)
+				Error(w, http.StatusServiceUnavailable, "dependency unavailable")
+				return
+			}
+			JSON(w, http.StatusOK, map[string]string{"status": "ready"})
 			return
 		}
 		if r.URL.Path == "/healthz" {

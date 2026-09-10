@@ -27,7 +27,7 @@ func TestHTTP(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			handler().ServeHTTP(recorder, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
+			handler(&stubStore{}).ServeHTTP(recorder, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
 			if recorder.Code != tc.code {
 				t.Fatalf("status = %d, want %d: %s", recorder.Code, tc.code, recorder.Body)
 			}

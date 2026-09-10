@@ -27,10 +27,15 @@ services:
       dockerfile: shopsim/inventory/Dockerfile
     ports:
       - "127.0.0.1:8082:8080"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
     mem_limit: 128m
     cpus: 0.5
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
       interval: 5s
       timeout: 2s
       retries: 5
@@ -41,11 +46,50 @@ services:
       dockerfile: shopsim/payment/Dockerfile
     ports:
       - "127.0.0.1:8081:8080"
+    environment:
+      DATABASE_URL: postgres://shopsim:shopsim-local@postgres:5432/shopsim?sslmode=disable&connect_timeout=1
+    depends_on:
+      postgres:
+        condition: service_healthy
     mem_limit: 128m
     cpus: 0.5
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
       interval: 5s
       timeout: 2s
       retries: 5
       start_period: 5s
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: shopsim
+      POSTGRES_PASSWORD: shopsim-local
+      POSTGRES_DB: shopsim
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./shopsim/payment/init.sql:/docker-entrypoint-initdb.d/001-payments.sql:ro
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopsim -d shopsim"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+      start_period: 10s
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  postgres-data:
+  redis-data:
