@@ -9,8 +9,16 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/OzielSauceda/aegis-resilience-platform/shopsim/internal/telemetry"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func JSON(w http.ResponseWriter, status int, value any) {
@@ -50,6 +58,14 @@ func Health(w http.ResponseWriter, r *http.Request) {
 
 // Route keeps method and unknown-path errors consistent with the JSON API.
 func Route(path, method string, handler http.HandlerFunc, readiness ...func(context.Context) error) http.Handler {
+	// Only the application endpoint reaches this wrapper. Probes and routing
+	// errors do not produce spans. The meter provider is explicitly a no-op.
+	application := otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		trace.SpanFromContext(r.Context()).SetAttributes(attribute.String("http.route", path))
+		handler(w, r)
+	}), method+" "+path,
+		otelhttp.WithSpanNameFormatter(func(operation string, _ *http.Request) string { return operation }),
+		otelhttp.WithMeterProvider(noop.NewMeterProvider()))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wanted := method
 		isReady := r.URL.Path == "/readyz" && len(readiness) != 0
@@ -79,12 +95,25 @@ func Route(path, method string, handler http.HandlerFunc, readiness ...func(cont
 			Health(w, r)
 			return
 		}
-		handler(w, r)
+		application.ServeHTTP(w, r)
 	})
 }
 
-func Run(service string, handler http.Handler) {
+func Run(service string, handler http.Handler) error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	shutdown, err := telemetry.Init(context.Background(), service)
+	if err != nil {
+		slog.Warn("tracing initialization failed; continuing", "service", service, "error", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			slog.Warn("trace flush incomplete", "service", service, "error", err)
+		}
+	}()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"
@@ -92,8 +121,21 @@ func Run(service string, handler http.Handler) {
 	server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	slog.Info("service starting", "service", service, "address", addr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("server failed", "service", service, "error", err)
-		os.Exit(1)
+	failed := make(chan error, 1)
+	go func() { failed <- server.ListenAndServe() }()
+	select {
+	case err := <-failed:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+	case <-ctx.Done():
+		drain, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(drain); err != nil {
+			_ = server.Close()
+			return err
+		}
 	}
+	slog.Info("service stopped", "service", service)
+	return nil
 }

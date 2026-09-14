@@ -16,6 +16,10 @@ import (
 	"time"
 
 	"github.com/OzielSauceda/aegis-resilience-platform/shopsim/internal/httpio"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type checkoutRequest struct {
@@ -41,6 +45,14 @@ type checkout struct {
 type downstreamStatus int
 
 func (s downstreamStatus) Error() string { return fmt.Sprintf("downstream HTTP status %d", s) }
+
+func newHTTPClient(base http.RoundTripper) *http.Client {
+	return &http.Client{
+		Timeout:       2 * time.Second,
+		Transport:     otelhttp.NewTransport(base, otelhttp.WithMeterProvider(noop.NewMeterProvider())),
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
 
 func (c checkout) call(ctx context.Context, endpoint string, payload any) (result, error) {
 	var output result
@@ -97,6 +109,9 @@ func (c checkout) handler() http.Handler {
 			httpio.Error(w, http.StatusBadRequest, "order_id, sku, positive quantity and positive amount_cents are required")
 			return
 		}
+		span := trace.SpanFromContext(r.Context())
+		span.SetAttributes(attribute.String("shopsim.order_id", request.OrderID), attribute.String("shopsim.sku", request.SKU),
+			attribute.Int("shopsim.quantity", request.Quantity), attribute.Int64("shopsim.amount_cents", request.AmountCents))
 		reservation, err := c.call(r.Context(), c.inventoryURL+"/reserve", map[string]any{"order_id": request.OrderID, "sku": request.SKU, "quantity": request.Quantity})
 		if err == nil && (reservation.OrderID != request.OrderID || reservation.Status != "reserved" || !httpio.Required(reservation.ReservationID)) {
 			err = errors.New("invalid reservation response")
@@ -111,6 +126,7 @@ func (c checkout) handler() http.Handler {
 		}
 		if err != nil {
 			slog.Warn("partial checkout failure: reservation remains", "order_id", request.OrderID, "reservation_id", reservation.ReservationID)
+			span.AddEvent("reservation retained after payment failure")
 			downstreamError(w, "payment", request.OrderID, err)
 			return
 		}
@@ -139,6 +155,9 @@ func main() {
 		slog.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
-	c := checkout{client: &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, inventoryURL: inventory, paymentURL: payment}
-	httpio.Run("checkout", c.handler())
+	c := checkout{client: newHTTPClient(nil), inventoryURL: inventory, paymentURL: payment}
+	if err := httpio.Run("checkout", c.handler()); err != nil {
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
+	}
 }

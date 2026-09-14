@@ -61,5 +61,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.db.Close()
-	httpio.Run("payment", handler(store))
+	if err := httpio.Run("payment", handler(store)); err != nil {
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
+	}
 }

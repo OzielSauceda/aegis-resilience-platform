@@ -1,6 +1,6 @@
 # Architecture v0
 
-## Implemented through Batch 2
+## Implemented through Batch 3
 
 Aegis currently contains ShopSim only: three independently executable Go services in one module, built into separate containers and connected through Docker Compose's default network.
 
@@ -17,7 +17,7 @@ Checkout owns orchestration. Inventory receives order ID, SKU and quantity and r
 
 The calls are synchronous and sequential, with a two-second client timeout for each downstream. No automatic retries, concurrent downstream fan-out, or circuit breakers exist. Server read/write deadlines bound request handling. Liveness checks do not recursively inspect dependencies.
 
-The environment is designed for a roughly 16 GB laptop. Go services and Redis each have a 128 MiB limit; PostgreSQL has 256 MiB. Every service has a half-CPU limit, with 768 MiB total runtime memory limits. Actual Docker VM/build memory depends on the developer's setup. Host ports 8080–8082 expose the applications on loopback. Datastores are accessible only on the Compose network. Environment variables supply connection settings. Each storage client has at most four active connections and each request's storage operation has a one-second context deadline.
+The environment is designed for a roughly 16 GB laptop. Go services and Redis each have a 128 MiB limit; PostgreSQL has 256 MiB. Collector adds 128 MiB and Jaeger adds 256 MiB. Every service has a half-CPU limit, with 1,152 MiB total runtime memory limits. Actual Docker VM/build memory depends on the developer's setup. Host ports 8080–8082 expose the applications on loopback. Datastores are accessible only on the Compose network. Environment variables supply connection settings. Each storage client has at most four active connections and each request's storage operation has a one-second context deadline.
 
 PostgreSQL's `payments` table has an `order_id` primary key, positive `amount_cents`, `charged` status, and creation timestamp. An INSERT with ON CONFLICT DO NOTHING enforces one ledger row per order. A separate read compares the committed winner's amount; exact replays succeed without modifying the row and changed amounts return 409. The application never deletes or updates ledger rows. Initialization SQL runs on first creation of the named PostgreSQL volume; later changes require explicit schema evolution.
 
@@ -29,11 +29,25 @@ All `/healthz` endpoints check process liveness only. Payment and Inventory `/re
 
 Reservation success followed by Payment failure leaves stock reserved. Checkout logs the order ID and retained reservation; an exact manual replay may finish after recovery without decrementing twice. There is no shared transaction, reservation expiration/release, Saga, automatic compensation, or HTTP retry. Per-service idempotency does not imply atomic checkout. This explicit limitation supplies a future Aegis failure scenario.
 
-## Intended later architecture — not implemented
+## Implemented tracing path
+
+Batch 3 already implements this separate telemetry path:
 
 ```mermaid
 flowchart LR
-    ShopSim -->|instrumentation later| Collector[OpenTelemetry Collector]
+    ShopSim[ShopSim tracing SDKs] -->|OTLP gRPC| Collector[OTel core Collector]
+    Collector -->|OTLP gRPC| Jaeger[Jaeger v2 memory storage and UI]
+```
+
+The HTTP server/client wrappers preserve W3C trace context; manual `redis.reserve` and `postgresql.charge` spans attach datastore work to their request parents. Probes are excluded. Best-effort asynchronous batching and bounded shutdown flushes keep telemetry outside the business critical path. Collector/Jaeger are absent from application readiness/startup dependencies. See the [tracing guide](../observability/tracing.md) and [ADR 0007](../adr/0007-tracing-first-observability.md).
+
+## Intended later architecture — not implemented
+
+The following analysis/expanded telemetry architecture is still future work:
+
+```mermaid
+flowchart LR
+    ShopSim -->|traces now; metrics and logs later| Collector[OpenTelemetry Collector]
     Collector --> Storage[Telemetry analytics storage]
     Storage --> Analysis[Python analysis and ML]
     Storage --> Control[Aegis control plane]
@@ -43,8 +57,8 @@ flowchart LR
     ChaosBench -->|ground truth| Control
 ```
 
-Future OpenTelemetry instrumentation will export metrics, logs and traces through an OpenTelemetry Collector to analytics storage. A later Aegis control plane will coordinate dependency reconstruction, incident evidence, root-cause ranking and tool-using AI investigation. Python analysis/ML components will support detection and ranking. A frontend will present findings and evidence.
+Future OpenTelemetry instrumentation will add metrics and logs to the existing trace foundation, and later analytics storage may replace or supplement transient Jaeger. A later Aegis control plane will coordinate dependency reconstruction, incident evidence, root-cause ranking and tool-using AI investigation. Python analysis/ML components will support detection and ranking. A frontend will present findings and evidence.
 
-ChaosBench will introduce controlled faults and provide ground truth for evaluation. Telemetry analytics products, monitoring interfaces, fault controls and deployment requirements are not implemented or finalized here. No directories or services for these future components are scaffolded. The PostgreSQL and Redis dependencies shown in the current diagram already exist; Aegis monitoring does not.
+ChaosBench will introduce controlled faults and provide ground truth for evaluation. Aegis telemetry analytics, monitoring interfaces, fault controls and deployment requirements are not implemented or finalized here. No directories or services for these future components are scaffolded. PostgreSQL, Redis, and the tracing infrastructure already exist; Aegis analysis does not.
 
 ShopSim is the evaluation target, not the primary portfolio product. Each future stage should be separately implemented and validated against explicit learning objectives.

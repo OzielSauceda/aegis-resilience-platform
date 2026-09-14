@@ -1,0 +1,49 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 96
+    spike_limit_mib: 24
+  batch:
+    timeout: 1s
+    send_batch_size: 64
+    send_batch_max_size: 128
+
+exporters:
+  otlp_grpc/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+    sending_queue:
+      queue_size: 128
+      num_consumers: 2
+    retry_on_failure:
+      initial_interval: 1s
+      max_interval: 5s
+      max_elapsed_time: 30s
+  debug:
+    verbosity: basic
+    sampling_initial: 2
+    sampling_thereafter: 100
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      level: none
+    logs:
+      level: info
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_grpc/jaeger, debug]
