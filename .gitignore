@@ -3,3 +3,9 @@
 *.test
 coverage.out
 /validation-artifacts/
+/analysis/.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+/analysis/build/
+/analysis/dist/

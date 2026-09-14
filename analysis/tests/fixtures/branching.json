@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "traces": [{
+    "trace_id": "example",
+    "spans": [
+      {"trace_id": "example", "span_id": "1", "parent_span_id": null, "service_name": "checkout", "span_kind": "server"},
+      {"trace_id": "example", "span_id": "2", "parent_span_id": "1", "service_name": "checkout", "span_kind": "client"},
+      {"trace_id": "example", "span_id": "3", "parent_span_id": "2", "service_name": "inventory", "span_kind": "server"},
+      {"trace_id": "example", "span_id": "4", "parent_span_id": "3", "service_name": "inventory", "span_kind": "client", "operation_name": "redis.reserve"},
+      {"trace_id": "example", "span_id": "5", "parent_span_id": "1", "service_name": "checkout", "span_kind": "client"},
+      {"trace_id": "example", "span_id": "6", "parent_span_id": "5", "service_name": "payment", "span_kind": "server"},
+      {"trace_id": "example", "span_id": "7", "parent_span_id": "6", "service_name": "payment", "span_kind": "client", "operation_name": "postgresql.charge"}
+    ]
+  }]
+}
