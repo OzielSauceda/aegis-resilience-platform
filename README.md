@@ -2,7 +2,7 @@
 
 Aegis is a planned Distributed Resilience Intelligence Platform: it will observe distributed applications, detect abnormal behavior, reconstruct dependencies and failure propagation, rank likely root causes, and investigate evidence. ChaosBench will eventually supply controlled faults for evaluation.
 
-**Batch 3 adds distributed tracing to stateful ShopSim, the small test environment that Aegis will monitor. The Aegis analysis platform itself is not implemented yet.**
+**Batch 4 adds Aegis's first analysis component: a Python library and CLI that reconstructs observed service dependencies from ShopSim traces. Batch 3's distributed tracing and ShopSim business behavior are preserved.**
 
 ShopSim consists of three independent Go HTTP services. Checkout calls Inventory to reserve stock in Redis, waits for success, then calls Payment to record a fake charge in PostgreSQL. Both results return to the client. Repeating the same order does not reserve or charge again.
 
@@ -16,6 +16,11 @@ flowchart LR
 ```
 
 ## Prerequisites and quick start
+
+For the independent analyzer, see [analysis setup and CLI usage](analysis/README.md),
+the [Batch 4 architecture and data contract](docs/architecture/batch-4-trace-analysis.md),
+and the [Batch 4 validation report](docs/reports/batch-4.md). Python 3.12+ is needed
+only to run analysis; it is not a ShopSim runtime dependency.
 
 - Go 1.27.1 (the module requires 1.27.1 or newer in the 1.27 series).
 - Docker Engine or Docker Desktop running Linux containers, with Docker Compose.
@@ -165,6 +170,6 @@ Payment failure occurs after a real stock reservation. Checkout logs the order a
 
 The request's downstream calls are deliberately sequential; the standard HTTP server can still serve independent clients concurrently.
 
-Metrics, OpenTelemetry log export, durable telemetry analytics storage, messaging, ChaosBench, analysis/ML, root-cause ranking, AI/LLMs, control plane, frontend, authentication, HTTP retries, circuit breakers, compensation, Kubernetes, Terraform and cloud deployment remain outside this batch. Redis is an inventory store here to provide a distinct stateful dependency and failure mode for experiments; it is not a universal production ecommerce recommendation.
+Metrics, OpenTelemetry log export, durable telemetry analytics storage, messaging, ChaosBench, advanced analytics/ML, root-cause ranking, AI/LLMs, control plane, frontend, authentication, HTTP retries, circuit breakers, compensation, Kubernetes, Terraform and cloud deployment remain outside this batch. Redis is an inventory store here to provide a distinct stateful dependency and failure mode for experiments; it is not a universal production ecommerce recommendation.
 
 See [architecture v0](docs/architecture/architecture-v0.md) and the [ADRs](docs/adr).

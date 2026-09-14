@@ -1,8 +1,8 @@
 # Architecture v0
 
-## Implemented through Batch 3
+## Implemented through Batch 4
 
-Aegis currently contains ShopSim only: three independently executable Go services in one module, built into separate containers and connected through Docker Compose's default network.
+Aegis contains ShopSim and an independent Python trace-analysis library/CLI in `analysis/`. ShopSim has three independently executable Go services in one module, built into separate containers and connected through Docker Compose's default network.
 
 ```mermaid
 flowchart LR
@@ -31,19 +31,23 @@ Reservation success followed by Payment failure leaves stock reserved. Checkout 
 
 ## Implemented tracing path
 
-Batch 3 already implements this separate telemetry path:
+Batch 3 supplies tracing; Batch 4 adds downstream analysis:
 
 ```mermaid
 flowchart LR
     ShopSim[ShopSim tracing SDKs] -->|OTLP gRPC| Collector[OTel core Collector]
     Collector -->|OTLP gRPC| Jaeger[Jaeger v2 memory storage and UI]
+    Jaeger -->|HTTP query adapter| Analysis[Aegis Python trace analysis]
+    Analysis --> Graph[Observed service dependency graph]
 ```
 
 The HTTP server/client wrappers preserve W3C trace context; manual `redis.reserve` and `postgresql.charge` spans attach datastore work to their request parents. Probes are excluded. Best-effort asynchronous batching and bounded shutdown flushes keep telemetry outside the business critical path. Collector/Jaeger are absent from application readiness/startup dependencies. See the [tracing guide](../observability/tracing.md) and [ADR 0007](../adr/0007-tracing-first-observability.md).
 
+Batch 4 reconstructs cross-service parent/child relationships through normalized Aegis trace objects, with deterministic JSON output and offline fixtures. It does not add a permanent service or any dependency to ShopSim's checkout path. See the [Batch 4 architecture and data contract](batch-4-trace-analysis.md).
+
 ## Intended later architecture — not implemented
 
-The following analysis/expanded telemetry architecture is still future work:
+The following expanded telemetry and advanced analysis architecture is still future work:
 
 ```mermaid
 flowchart LR
@@ -59,6 +63,6 @@ flowchart LR
 
 Future OpenTelemetry instrumentation will add metrics and logs to the existing trace foundation, and later analytics storage may replace or supplement transient Jaeger. A later Aegis control plane will coordinate dependency reconstruction, incident evidence, root-cause ranking and tool-using AI investigation. Python analysis/ML components will support detection and ranking. A frontend will present findings and evidence.
 
-ChaosBench will introduce controlled faults and provide ground truth for evaluation. Aegis telemetry analytics, monitoring interfaces, fault controls and deployment requirements are not implemented or finalized here. No directories or services for these future components are scaffolded. PostgreSQL, Redis, and the tracing infrastructure already exist; Aegis analysis does not.
+ChaosBench will introduce controlled faults and provide ground truth for evaluation. Advanced Aegis telemetry analytics, monitoring interfaces, fault controls and deployment requirements are not implemented or finalized here. No directories or services for these future components are scaffolded. PostgreSQL, Redis, the tracing infrastructure, and Batch 4's service dependency reconstruction already exist.
 
 ShopSim is the evaluation target, not the primary portfolio product. Each future stage should be separately implemented and validated against explicit learning objectives.
