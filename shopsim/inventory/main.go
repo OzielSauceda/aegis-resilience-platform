@@ -72,5 +72,8 @@ func main() {
 		slog.Error("Redis initialization failed", "error", err)
 		os.Exit(1)
 	}
-	httpio.Run("inventory", handler(store))
+	if err := httpio.Run("inventory", handler(store)); err != nil {
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
+	}
 }

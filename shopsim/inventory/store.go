@@ -6,7 +6,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/OzielSauceda/aegis-resilience-platform/shopsim/internal/telemetry"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -51,11 +55,33 @@ func (s *redisStore) Seed(ctx context.Context) error {
 	return nil
 }
 
-func (s *redisStore) Reserve(ctx context.Context, request reserveRequest) (bool, error) {
+func (s *redisStore) Reserve(ctx context.Context, request reserveRequest) (replay bool, resultErr error) {
+	ctx, span := otel.Tracer("shopsim/inventory").Start(ctx, "redis.reserve", trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("db.system.name", "redis"), attribute.String("db.operation.name", "reserve"),
+			attribute.String("shopsim.order_id", request.OrderID), attribute.String("shopsim.sku", request.SKU), attribute.Int("shopsim.quantity", request.Quantity)))
+	defer func() {
+		outcome := "created"
+		switch {
+		case errors.Is(resultErr, errConflict):
+			outcome = "conflict"
+		case errors.Is(resultErr, errInsufficientStock):
+			outcome = "insufficient_stock"
+		case errors.Is(resultErr, errUnknownSKU):
+			outcome = "unknown_sku"
+		case resultErr != nil:
+			outcome = "storage_error"
+			telemetry.StorageError(span, "redis", resultErr)
+		case replay:
+			outcome = "replayed"
+		}
+		span.SetAttributes(attribute.String("shopsim.outcome", outcome))
+		span.End()
+	}()
 	stockKey := "stock:" + request.SKU
 	reservationKey := "reservation:" + request.OrderID
 	const maxAttempts = 8
 	for attempt := 0; attempt < maxAttempts; attempt++ {
+		span.SetAttributes(attribute.Int("shopsim.transaction_attempts", attempt+1))
 		replayed := false
 		err := s.client.Watch(ctx, func(tx *redis.Tx) error {
 			existing, err := tx.HGetAll(ctx, reservationKey).Result()

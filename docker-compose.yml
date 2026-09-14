@@ -8,6 +8,8 @@ services:
     environment:
       INVENTORY_URL: http://inventory:8080
       PAYMENT_URL: http://payment:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
     depends_on:
       inventory:
         condition: service_healthy
@@ -29,6 +31,8 @@ services:
       - "127.0.0.1:8082:8080"
     environment:
       REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
     depends_on:
       redis:
         condition: service_healthy
@@ -48,6 +52,8 @@ services:
       - "127.0.0.1:8081:8080"
     environment:
       DATABASE_URL: postgres://shopsim:shopsim-local@postgres:5432/shopsim?sslmode=disable&connect_timeout=1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,6 +95,31 @@ services:
       timeout: 2s
       retries: 10
       start_period: 5s
+
+  # Observability is deliberately absent from ShopSim depends_on/readiness.
+  otel-collector:
+    image: otel/opentelemetry-collector:0.160.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    environment:
+      GOMEMLIMIT: 96MiB
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:13133:13133"
+    mem_limit: 128m
+    cpus: 0.5
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
+    command: ["--config=/etc/jaeger/config.yaml"]
+    volumes:
+      - ./observability/jaeger.yaml:/etc/jaeger/config.yaml:ro
+    environment:
+      GOMEMLIMIT: 192MiB
+    ports:
+      - "127.0.0.1:16686:16686"
+    mem_limit: 256m
+    cpus: 0.5
 
 volumes:
   postgres-data:

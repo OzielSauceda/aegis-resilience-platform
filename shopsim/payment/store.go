@@ -6,7 +6,11 @@ import (
 	"errors"
 	"time"
 
+	"github.com/OzielSauceda/aegis-resilience-platform/shopsim/internal/telemetry"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var errConflict = errors.New("order already charged with a different amount")
@@ -31,7 +35,24 @@ func openPostgres(connection string) (*postgresStore, error) {
 
 func (s *postgresStore) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
-func (s *postgresStore) Charge(ctx context.Context, request chargeRequest) (bool, error) {
+func (s *postgresStore) Charge(ctx context.Context, request chargeRequest) (replay bool, resultErr error) {
+	ctx, span := otel.Tracer("shopsim/payment").Start(ctx, "postgresql.charge", trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("db.system.name", "postgresql"), attribute.String("db.operation.name", "charge"),
+			attribute.String("shopsim.order_id", request.OrderID), attribute.Int64("shopsim.amount_cents", request.AmountCents)))
+	defer func() {
+		outcome := "created"
+		switch {
+		case errors.Is(resultErr, errConflict):
+			outcome = "conflict"
+		case resultErr != nil:
+			outcome = "storage_error"
+			telemetry.StorageError(span, "postgresql", resultErr)
+		case replay:
+			outcome = "replayed"
+		}
+		span.SetAttributes(attribute.String("shopsim.outcome", outcome))
+		span.End()
+	}()
 	var orderID string
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO payments (order_id, amount_cents, status)

@@ -2,7 +2,7 @@
 
 Aegis is a planned Distributed Resilience Intelligence Platform: it will observe distributed applications, detect abnormal behavior, reconstruct dependencies and failure propagation, rank likely root causes, and investigate evidence. ChaosBench will eventually supply controlled faults for evaluation.
 
-**Batch 2 implements stateful ShopSim, the small test environment that Aegis will monitor. The Aegis platform itself is not implemented yet.**
+**Batch 3 adds distributed tracing to stateful ShopSim, the small test environment that Aegis will monitor. The Aegis analysis platform itself is not implemented yet.**
 
 ShopSim consists of three independent Go HTTP services. Checkout calls Inventory to reserve stock in Redis, waits for success, then calls Payment to record a fake charge in PostgreSQL. Both results return to the client. Repeating the same order does not reserve or charge again.
 
@@ -19,7 +19,7 @@ flowchart LR
 
 - Go 1.27.1 (the module requires 1.27.1 or newer in the 1.27 series).
 - Docker Engine or Docker Desktop running Linux containers, with Docker Compose.
-- Free host ports 8080, 8081 and 8082.
+- Free host ports 8080, 8081, 8082, 4317, 13133 and 16686.
 
 From the repository root:
 
@@ -34,7 +34,11 @@ docker compose build
 docker compose up -d --wait
 ```
 
-Go uses one module, standard-library HTTP handlers, pgx through database/sql, and go-redis. Docker packages the independently built Go executables. Multi-stage application images run as an unprivileged user. Compose limits each Go service and Redis to 128 MiB RAM, PostgreSQL to 256 MiB, and each container to 0.5 CPU. Runtime limits total 768 MiB; Docker Desktop, image builds, and the optional integration test container require additional memory.
+Go uses one module, standard-library HTTP handlers, pgx through database/sql, go-redis, and OpenTelemetry tracing. Docker packages the independently built Go executables. Multi-stage application images run as an unprivileged user. Compose limits each Go service and Redis to 128 MiB RAM, PostgreSQL to 256 MiB, Collector to 128 MiB, and Jaeger to 256 MiB. Each container has a 0.5 CPU limit. Runtime memory limits total 1,152 MiB; Docker Desktop, image builds, and the optional integration test container require additional memory.
+
+ShopSim exports traces asynchronously over OTLP/gRPC to the official core OpenTelemetry Collector, which forwards them to Jaeger. Open **http://localhost:16686** and search service **checkout** after submitting a new checkout. Expand the trace to see Inventory/Redis and Payment/PostgreSQL operations under one Trace ID. Collector/Jaeger outages do not affect ShopSim readiness or business operations. Health/readiness probes are untraced; metrics and OpenTelemetry log export are deferred.
+
+See the [tracing guide](docs/observability/tracing.md) for concepts, configuration, failure experiments, exact validation commands, and limitations. The [Batch 3 report](docs/reports/batch-3.md) records implementation and validation evidence.
 
 | Service | Host URL | Internal Compose URL | Operation |
 | --- | --- | --- | --- |
@@ -161,6 +165,6 @@ Payment failure occurs after a real stock reservation. Checkout logs the order a
 
 The request's downstream calls are deliberately sequential; the standard HTTP server can still serve independent clients concurrently.
 
-OpenTelemetry/OTLP, Collector, telemetry analytics storage, messaging, ChaosBench, analysis/ML, root-cause ranking, AI/LLMs, control plane, frontend, authentication, HTTP retries, circuit breakers, compensation, Kubernetes, Terraform and cloud deployment remain outside this batch. Redis is an inventory store here to provide a distinct stateful dependency and failure mode for experiments; it is not a universal production ecommerce recommendation.
+Metrics, OpenTelemetry log export, durable telemetry analytics storage, messaging, ChaosBench, analysis/ML, root-cause ranking, AI/LLMs, control plane, frontend, authentication, HTTP retries, circuit breakers, compensation, Kubernetes, Terraform and cloud deployment remain outside this batch. Redis is an inventory store here to provide a distinct stateful dependency and failure mode for experiments; it is not a universal production ecommerce recommendation.
 
 See [architecture v0](docs/architecture/architecture-v0.md) and the [ADRs](docs/adr).
