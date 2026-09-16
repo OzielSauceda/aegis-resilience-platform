@@ -2,7 +2,7 @@
 
 Aegis is a planned Distributed Resilience Intelligence Platform: it will observe distributed applications, detect abnormal behavior, reconstruct dependencies and failure propagation, rank likely root causes, and investigate evidence. ChaosBench will eventually supply controlled faults for evaluation.
 
-**Batch 4 adds Aegis's first analysis component: a Python library and CLI that reconstructs observed service dependencies from ShopSim traces. Batch 3's distributed tracing and ShopSim business behavior are preserved.**
+**Batch 5 adds evidence-backed time-window summaries: observed dependency counts, explicit error rates, caller-side latency statistics, and exact trace/span provenance. Graph reconstruction and summaries share one canonical observation layer. ShopSim business behavior and existing tracing remain unchanged.**
 
 ShopSim consists of three independent Go HTTP services. Checkout calls Inventory to reserve stock in Redis, waits for success, then calls Payment to record a fake charge in PostgreSQL. Both results return to the client. Repeating the same order does not reserve or charge again.
 
@@ -18,8 +18,8 @@ flowchart LR
 ## Prerequisites and quick start
 
 For the independent analyzer, see [analysis setup and CLI usage](analysis/README.md),
-the [Batch 4 architecture and data contract](docs/architecture/batch-4-trace-analysis.md),
-and the [Batch 4 validation report](docs/reports/batch-4.md). Python 3.12+ is needed
+the [Batch 5 evidence contract](docs/architecture/batch-5-evidence.md),
+and the [Batch 5 validation report](docs/reports/batch-5.md). Python 3.12+ is needed
 only to run analysis; it is not a ShopSim runtime dependency.
 
 - Go 1.27.1 (the module requires 1.27.1 or newer in the 1.27 series).

@@ -1,6 +1,6 @@
 # Architecture v0
 
-## Implemented through Batch 4
+## Implemented through Batch 5
 
 Aegis contains ShopSim and an independent Python trace-analysis library/CLI in `analysis/`. ShopSim has three independently executable Go services in one module, built into separate containers and connected through Docker Compose's default network.
 
@@ -31,19 +31,28 @@ Reservation success followed by Payment failure leaves stock reserved. Checkout 
 
 ## Implemented tracing path
 
-Batch 3 supplies tracing; Batch 4 adds downstream analysis:
+Batch 3 supplies tracing; Batches 4 and 5 add downstream analysis:
 
 ```mermaid
 flowchart LR
     ShopSim[ShopSim tracing SDKs] -->|OTLP gRPC| Collector[OTel core Collector]
     Collector -->|OTLP gRPC| Jaeger[Jaeger v2 memory storage and UI]
     Jaeger -->|HTTP query adapter| Analysis[Aegis Python trace analysis]
-    Analysis --> Graph[Observed service dependency graph]
+    Analysis --> Observations[Canonical cross-service observations]
+    Observations --> Graph[Observed service dependency graph]
+    Observations --> Evidence[Evidence-backed time-window summaries]
 ```
 
 The HTTP server/client wrappers preserve W3C trace context; manual `redis.reserve` and `postgresql.charge` spans attach datastore work to their request parents. Probes are excluded. Best-effort asynchronous batching and bounded shutdown flushes keep telemetry outside the business critical path. Collector/Jaeger are absent from application readiness/startup dependencies. See the [tracing guide](../observability/tracing.md) and [ADR 0007](../adr/0007-tracing-first-observability.md).
 
 Batch 4 reconstructs cross-service parent/child relationships through normalized Aegis trace objects, with deterministic JSON output and offline fixtures. It does not add a permanent service or any dependency to ShopSim's checkout path. See the [Batch 4 architecture and data contract](batch-4-trace-analysis.md).
+
+Batch 5 is implemented in the same library/CLI: `observations.py` supplies one
+shared edge definition to graph reconstruction and `evidence.py`. The latter
+reports half-open window counts, explicit child errors, caller CLIENT latency,
+nearest-rank percentiles, exact provenance and completeness limitations. See the
+[Batch 5 evidence contract](batch-5-evidence.md). It adds no service or runtime
+dependency to ShopSim.
 
 ## Intended later architecture — not implemented
 
