@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "traces": [
+    {
+      "trace_id": "t1",
+      "spans": [
+        {"trace_id": "t1", "span_id": "root", "parent_span_id": null, "service_name": "gateway", "span_kind": "server", "start_time_us": 900, "duration_us": 10000, "status": "error"},
+        {"trace_id": "t1", "span_id": "a", "parent_span_id": "root", "service_name": "gateway", "span_kind": "client", "start_time_us": 950, "duration_us": 100},
+        {"trace_id": "t1", "span_id": "b", "parent_span_id": "a", "service_name": "worker", "span_kind": "server", "start_time_us": 1000, "duration_us": 10},
+        {"trace_id": "t1", "span_id": "c", "parent_span_id": "root", "service_name": "gateway", "span_kind": "client", "start_time_us": 1400, "duration_us": 300},
+        {"trace_id": "t1", "span_id": "d", "parent_span_id": "c", "service_name": "worker", "span_kind": "server", "start_time_us": 1500, "duration_us": 20, "status": "error"}
+      ]
+    },
+    {
+      "trace_id": "t2",
+      "spans": [
+        {"trace_id": "t2", "span_id": "e", "parent_span_id": null, "service_name": "gateway", "span_kind": "client", "start_time_us": 1700},
+        {"trace_id": "t2", "span_id": "f", "parent_span_id": "e", "service_name": "worker", "span_kind": "server", "start_time_us": 1800, "duration_us": 15, "status": "ok"},
+        {"trace_id": "t2", "span_id": "g", "parent_span_id": null, "service_name": "gateway", "span_kind": "client", "start_time_us": 1900, "duration_us": 900},
+        {"trace_id": "t2", "span_id": "h", "parent_span_id": "g", "service_name": "worker", "span_kind": "server", "start_time_us": 2000, "duration_us": 40}
+      ]
+    }
+  ]
+}
